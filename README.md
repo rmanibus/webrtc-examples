@@ -3,7 +3,7 @@ juin 2015
 
 # Démonstrateur WebRTC
 
-Ce script vous permettra de tester differents paramètres pour le webRTC. vous pourrez par example forcer un codec audio ou vidéo à être utilisé.
+Ce script vous permettra de tester differents paramètres pour le webRTC. vous pourrez par exemple forcer un codec audio ou vidéo à être utilisé.
 
 
 Fichier serveur: wsServer.js
