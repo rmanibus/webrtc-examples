@@ -112,7 +112,6 @@ parametrer le fichier client.html (rubrique parametre).
 		/*--------------------------------------------------*/
 ```
 
-la variable server_port doit corespondre au port indiqué dans le fichier serveur (1234 en ce moment)
 
 ## run:
 ```
