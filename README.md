@@ -6,7 +6,7 @@ juin 2015
 Ce script vous permettra de tester differents paramètres pour le webRTC. vous pourrez par example forcer un codec audio ou vidéo à être utilisé.
 
 
-Fichier serveur: wsServeur.js
+Fichier serveur: wsServer.js
 Fichier client: client.html
 
 ## Installation - prérequis:
