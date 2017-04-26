@@ -1,0 +1,19 @@
+{
+  "name": "webrtc-example",
+  "version": "0.1.0",
+  "description":"A basic webrtc Communication",
+  "main":"wsServer.js",
+  "scripts": {
+    "start": "node wsServer.js"
+  },
+  "author":"rmanibus",
+  "licence":"SEE LICENCE IN LICENCE",
+  "dependencies": {
+    "express": "^4.12.2",
+    "socket.io": "^1.7.3",
+    "sdp-transform": "^1.4.0"
+  },
+  "devDependencies": {
+    "browserify": "^10.2.4"
+  }
+}

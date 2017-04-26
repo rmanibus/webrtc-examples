@@ -1,0 +1,559 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+
+	<script src="bundle.js"></script>
+	<script src="/socket.io/socket.io.js"></script>
+
+
+
+	<script type="text/javascript">
+		
+		/*
+		Dernière modification le 29/06/2015 par Loïc HERMANN 
+		Script de demonstration du WebRTC
+		
+		*/
+
+		console.log("--------------------------------------------------\n");
+		console.log("--------------------------------------------------\n");
+
+		console.log("__          ________ ____  _____ _______ _____ "); 
+		console.log("\\ \\        / /  ____|  _ \\|  __ \\__   __/ ____|");
+		console.log(" \\ \\  /\\  / /| |__  | |_) | |__) | | | | |     ");
+		console.log("  \\ \\/  \\/ / |  __| |  _ <|  _  /  | | | |     ");
+		console.log("   \\  /\\  /  | |____| |_) | | \\ \\  | | | |____ ");
+		console.log("    \\/  \\/   |______|____/|_|  \\_\\ |_|  \\_____|");
+		console.log("--------------------------------------------------\n");
+		console.log("--------------------------------------------------\n");
+
+
+		/*DEFINITION DES VARIABLES DEPENDANT DU MOTEUR WEB*/	
+		
+		/*Le WebRTC étant encore à l'état de Draft, 
+		les APIs sont préfixés. 
+		Voici la solution pour créer une solution 
+		compatible sur tous les navigateurs: */
+
+		var PeerConnection = 		window.RTCPeerConnection ||
+ 						window.mozRTCPeerConnection ||
+	 					window.webkitRTCPeerConnection;
+
+		var SessionDescription = 	window.RTCSessionDescription ||
+ 						window.mozRTCSessionDescription ||
+		 				window.webkitRTCSessionDescription;
+
+		var IceCandidate = 		window.RTCIceCandidate ||
+		 				window.mozRTCIceCandidate ||
+		 				window.webkitRTCIceCandidate;
+
+		navigator.getUserMedia  = 	navigator.getUserMedia ||
+						navigator.webkitGetUserMedia ||
+						navigator.mozGetUserMedia ||
+						navigator.msGetUserMedia;
+
+		/*--------------------------------------------------*/
+
+
+		/*TEST DE LA PRESENCE DES APIS REQUIS*/
+		
+		/*On verifie que le WebRTC et les WebSockets 
+		sont présents dans le navigateur */
+		
+		if ("WebSocket" in window)
+			console.log("WebSocket supportée par le navigateur!");
+		else
+			throw new Error("WebSocket NON supportée par le navigateur!");
+
+		if (navigator.getUserMedia)
+			console.log("GetUserMedia supportée par le navigateur!");
+		else
+			throw new Error("GetUserMedia NON supportée par le navigateur!");
+	
+		/*--------------------------------------------------*/
+
+
+
+		/*INITIALISATION DES VARIABLES DU SCRIPT*/
+
+		var pc;//peerConnexion
+		var start;
+		var hangUp;
+		var stop;
+		var signalingChannel;
+		var remoteView;
+		var selfView;
+		var errorHandler;
+		var transform = require('sdp-transform');
+		var res;
+		var sdp;
+		var transformSDP;
+		//pour la config
+		var DEBUG_SEND;
+		var DEBUG_RECEIVE;
+		var DEBUG_LEVEL;
+		var codecAudio;
+		var codecVideo;
+		var setCodec;
+		var server_location;
+		var server_port;
+		var configuration;
+		var options;
+		var mediaOptions;
+		var constraints;
+		/*--------------------------------------------------*/
+
+
+		/*CONFIGURATION*/
+	
+
+	/*debug*/
+			
+		DEBUG_SEND = true;
+		DEBUG_RECEIVE = true;
+		DEBUG_LEVEL = 10; // 0 min - 10 max
+
+
+	/*codecs*/
+
+
+		codecAudio = "auto"; //soit auto, soit par nom: G722, opus ... soit par son code (numérique). 
+		/*
+		choix auto: auto
+		Chrome: 
+			opus (111),
+			ISAC (/16000 code 103 et /32000 code 104)
+			G722 (9), PCMU (0), PCMA (8),
+			CN (/32000 code 106, /16000 code 105 et /8000 code 13),
+			telephone-event (126) 
+
+		Firefox:
+			opus (109) 
+			G722 (9),
+			PCMU (0),
+			PCMA (8)
+
+		*/
+
+		codecVideo = "H264"; 
+
+		/*
+		choix auto: auto
+		Chrome: 
+			VP8 (100),
+			red (116),
+			ulpfec (117),
+			rtx (96),
+
+		Firefox:
+			VP8 (120),
+			H264 (126),
+			H264 (97)
+
+		*/
+
+		//Pour une Liste plus ou moins exhaustive des codecs, RDV dans les captures SDP Firefox et Chrome (à remettre à jour de temps à autre)
+
+	/*peerConnexion*/
+
+		configuration = {
+	   	 	iceServers: [
+				{urls: "stun:23.21.150.121"},
+				{urls: "stun:stun.l.google.com:19302"},
+				{urls: "turn:numb.viagenie.ca", credential: "webrtcdemo", username: "louis%40mozilla.com"}
+	    		]
+		};
+		
+		options = {
+
+		};
+
+	/*GetUserMedia*/
+
+		mediaOptions = { 	
+			"audio": true, 
+			"video": true 
+		};	
+
+	/*CreateOffer*/
+	
+		/*Si la communication doit être à sens unique, mettre à false*/
+		constraints = {
+			offerToReceiveAudio: false,
+			offerToReceiveVideo: false
+		};
+		
+		/*--------------------------------------------------*/
+
+
+
+		/*ON ATTEND QUE LA PAGE SOIT CHARGEE POUR RECUPERER LES BALISES HTML*/	
+
+		window.addEventListener('DOMContentLoaded', function() {
+			remoteView = document.getElementById("remoteView");
+			selfView = document.getElementById("selfView");
+		});
+
+		/*--------------------------------------------------*/
+
+
+		/*SIGNALEMENT*/
+
+
+		signalingChannel = io('http://'+location.host);
+		signalingChannel.on('message', function (evt) {
+			
+			
+
+			console.log("reception:");
+			
+			var signal = JSON.parse(evt);
+			//On essaye de se rapprocher du standard SIP pour faciliter l'integration
+			switch(signal.type){
+
+				/*REQUEST*/
+
+				case 'INVITE':
+
+					//si pc == null c'est qu'on se fait appeler.
+					if (!pc)
+						start(false);
+
+				/*On peut se servir de cette requete pour introduire
+				 des champs de routages */
+
+					if (signal.sdp){
+						if(DEBUG_RECEIVE)
+							console.log(signal.sdp.type);
+
+						if(DEBUG_RECEIVE){
+							sdp = transform.parse(signal.sdp.sdp); //on parse pour le debug
+							console.log(sdp);}
+						pc.setRemoteDescription(new SessionDescription(signal.sdp));
+						signalingChannel.send(JSON.stringify({"type": "200", "message": "OK"}));
+					}
+				break;
+				case 'ICE':
+					if(DEBUG_RECEIVE && DEBUG_LEVEL > 5)
+						console.log(signal.ice);
+					/*Quand l'autre navigateur a un candidat ICE il nous l'envoit.*/
+					pc.addIceCandidate(new IceCandidate(signal.ice));
+				break;
+
+				case 'BYE':
+					if(pc){ // seulement si on a une communication en cours
+						if(DEBUG_RECEIVE)
+							console.log("Votre correspondant a mis fin à la communication.");
+						stop();
+						signalingChannel.send(JSON.stringify({"type": "200", "message": "OK"}));
+					}
+				break;
+
+				/*ANSWER*/
+
+				case '100'://trying (renvoyé par le serveur)
+					if(DEBUG_RECEIVE)
+						console.log("trying ...");
+				break;
+				case '200'://OK
+					if(DEBUG_RECEIVE)
+						console.log("OK");
+				break;
+			}
+
+		});
+	
+		signalingChannel.on('connect',function() {
+			console.log('WebSocket connectée au serveur!');
+		});
+		window.onbeforeunload = function (){
+	    		signalingChannel.close();
+		};
+		
+
+		/*--------------------------------------------------*/
+
+		/*CALBACK D'ERREUR*/
+
+		errorHandler = function (err) {
+	    		console.error(err);
+		};
+
+		/*--------------------------------------------------*/
+
+
+		
+		/*FONCTIONS DE MODIFICATION DU SDP*/
+
+		transformSDP = function (parsedSdp){
+
+			/*variables locales*/
+
+			var cp; //codec payload
+			var ce; //codec exist
+			var cn; //codec name
+
+			
+			/*-----------------*/
+			
+			parsedSdp.media.forEach(function (element, index, array){
+				
+
+				if(element.type == "video")
+				{
+					/*traitement de la vidéo*/
+					if(DEBUG_SEND && DEBUG_LEVEL > 7)
+						console.log("pour l'image:");
+					if(DEBUG_SEND && DEBUG_LEVEL > 8){
+						console.log("avant:");
+						console.log(element);}
+
+					element = setCodec(element, codecVideo, "video");
+							
+				}
+				else if (element.type == "audio")
+				{	
+					/*traitement du son*/
+					if(DEBUG_SEND && DEBUG_LEVEL > 7)
+						console.log("pour l'audio:");
+					if(DEBUG_SEND && DEBUG_LEVEL > 8){
+						console.log("avant:");
+						console.log(element);}
+						
+					element = setCodec(element, codecAudio, "audio");
+
+						
+				}
+				if(DEBUG_SEND && DEBUG_LEVEL > 8)	
+					console.log("après:");
+				if(DEBUG_SEND && DEBUG_LEVEL > 6)
+					console.log(element);
+			});
+
+			return parsedSdp
+		};
+
+
+		setCodec = function(element, codec, type){
+			if(codec != "auto" && codec != "")
+			{
+				if (DEBUG_SEND && DEBUG_LEVEL > 2)
+					console.log("codec "+type+" imposé par l'utilisateur: "+codec);	
+
+				/*choix du codec par son nom*/
+				if(isNaN(codec)){
+																		
+					if (DEBUG_SEND && DEBUG_LEVEL > 8)
+						console.log("(choix du codec "+type+" par son nom)");
+	
+					ce = false;
+					cp = "";
+					cn = codec;
+
+					element.rtp.forEach(function(rtp,ind,arr){
+							
+						if (rtp.codec == codec){
+							cp += " "+rtp.payload; // plusieurs elements peuvent correspondre au même codec !	
+							ce = true;}
+												
+					});
+							
+				}
+				/*choix du codec par son payload*/
+				else
+				{
+					if (DEBUG_SEND && DEBUG_LEVEL > 8)
+						console.log("(choix du codec "+type+" par son payload)");	
+					ce = !element.rtp.every(function(rtp,ind,arr){
+							
+						if (rtp.payload == codec){
+							cp = codec;
+							cn = rtp.codec;
+							return false;}
+						return true;
+								
+									
+					});
+				}
+	
+				if (ce == true){
+														
+					if (DEBUG_SEND && DEBUG_LEVEL > 2)
+						console.log("Le codec "+type+" choisi est compatible avec le navigateur");	
+					element.payloads = cp;
+					element.rtp.forEach(function(rtpElement,ind,arr){
+							
+						if (rtpElement.codec != cn)
+							delete element.rtp[ind];
+					});
+					
+				}
+				else if (DEBUG_SEND && DEBUG_LEVEL > 2)
+					console.log("Le codec "+type+" choisi ("+codec+") N'EST PAS compatible avec le navigateur ! aucune modification.");	
+			}
+			else if (DEBUG_SEND && DEBUG_LEVEL > 2)
+				console.log("codec "+type+" auto: SDP non modifié !");	
+
+			return element;
+
+		};
+
+		/*--------------------------------------------------*/
+		
+		/*FONCTION PRINCIPALE*/	
+	
+		start = function (isCaller) {
+			pc = new PeerConnection(configuration, options); 
+
+		    // on envoit les candidats ICE sur le canal de signalement dès qu'on les reçoit
+		    	pc.onicecandidate = function (evt) {
+				if (!evt.candidate) return;
+				console.log("ice candidate:"+evt.candidate);
+				signalingChannel.send(JSON.stringify({"type": "ICE", "ice": evt.candidate}));
+		    	};
+			/*Il existe une autre méthode qui est exploitée dans le client de l'exemple avec la gateway Kurento.
+			Les candidats sont automatiquement ajoutés au SDP quand ils arrivent.
+			Au lieu d'envoyer immediatement le SDP puis d'envoyer les candidats ICE au fur et a mesure, on peut
+			attendre que onicecandidate renvoit null sans rien envoyer (a ce moment tout les candidats ont été traité)
+			il suffit ensuite d'envoyer à ce moment la le SDP qui contient alors tous les candidats.
+			
+			
+			Pour Info : 
+				var ended = false;
+		    	pc.onicecandidate = function (e) {
+				console.log("ice candidate:"+e.candidate);
+				if (e.candidate) {
+					ended = false;
+					return;
+				}
+
+				if (ended) {
+					return;
+				}
+
+				signalingChannel.send(JSON.stringify({"type": "INVITE", "sdp": pc.localDescription.sdp }));
+
+				ended = true;
+				console.log('ICE negotiation completed');
+		    	};
+				
+			*/
+			
+		    // on affiche le flux distant quand on le reçoit
+			pc.onaddstream = function (evt) {
+				if (DEBUG_SEND && DEBUG_LEVEL > 8)
+					console.log("remote stream adress: "+URL.createObjectURL(evt.stream));	
+				remoteView.src = URL.createObjectURL(evt.stream);
+			};
+
+		    //On récupère le flux local, puis on l'ajoute au stream
+			navigator.getUserMedia(mediaOptions, function (stream) {
+				if (DEBUG_SEND && DEBUG_LEVEL > 8)
+					console.log("local stream adress: "+URL.createObjectURL(stream));	
+				selfView.src = URL.createObjectURL(stream);
+				pc.addStream(stream);
+					
+				function gotDescription(desc) {
+
+					/*Traitement du sdp (choix des codec ...)*/
+
+					res = transform.parse(desc.sdp); //on parse le SDP
+
+					if(DEBUG_SEND && DEBUG_LEVEL > 5){
+						console.log("SDP issue du createOffer:");	
+						console.log(res);}
+
+					if(DEBUG_SEND && DEBUG_LEVEL > 8)
+						console.log("\névolution des champs medias");
+					else if (DEBUG_SEND && DEBUG_LEVEL > 6)
+						console.log("champs medias modifiés:");
+
+
+					res = transformSDP(res); //fonction de modification du sdp
+
+
+					desc.sdp = transform.write(res)//.split('\r\n')
+
+						
+					if(DEBUG_SEND && DEBUG_LEVEL > 1){
+						console.log("SDP après modification:");
+						console.log(res);}
+
+					/*---------------------------------------*/
+
+			    		pc.setLocalDescription(desc);
+					//console.log(JSON.stringify({ "sdp": desc }));
+			    		signalingChannel.send(JSON.stringify({"type": "INVITE", "sdp": desc }));
+
+					/*Schéma de l'objet envoyé: 	{
+									"type":"INVITE",
+									"sdp":	{
+										"type":"OFFER/ANSWER",
+										"sdp":"le sdp ..."
+										}	
+									}*/
+				}
+					
+
+				if (isCaller){
+			    		pc.createOffer(gotDescription,errorHandler, constraints);
+					if(DEBUG_SEND && DEBUG_LEVEL > 1)
+						console.log("Offer: ");
+				}
+				else{
+			   		pc.createAnswer(gotDescription,errorHandler);
+					if(DEBUG_SEND && DEBUG_LEVEL > 1)
+						console.log("Answer: ");
+				}
+
+			},errorHandler);
+					
+		};
+
+		/*--------------------------------------------------*/
+
+
+		/*TERMINAISON*/
+
+		hangUp = function () {
+		
+			if(pc){
+				if(DEBUG_SEND)
+					console.log("Vous avez mis fin à la communication ... en attente");
+				stop();
+				signalingChannel.send(JSON.stringify({"type": "BYE"}));
+			}
+		};
+		
+		stop = function (){
+
+			pc.close();
+			pc = null;
+			remoteView.src = null;
+			selfView.src = null;
+			//remoteView.pause();
+			//selfView.pause();
+		};
+
+		/*--------------------------------------------------*/
+
+	</script>
+
+	</head>
+	<body>
+		Afficher la console Javascript pour plus d'infos !
+		<button onclick="start(true);">Call</button>
+		<button onclick="hangUp();">HangUp</button></br>
+		</br>
+		<div style="border-top: 1px solid black; display: inline-block">
+			Vue Locale:</br>
+			<video id="selfView" autoplay muted></video>
+		</div>
+		<div style="border-top: 1px solid black; width: auto;display: inline-block"" >
+			Vue distante:</br>
+			<video id="remoteView" autoplay></video>
+		</div>
+
+	</body>
+</html>
