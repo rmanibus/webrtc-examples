@@ -117,8 +117,8 @@ parametrer le fichier client.html (rubrique parametre).
 ```
 npm start
 ```
-rendez vous ensuite sur <ipduserveur>:<portduserveur>/client.html
-(ouvrir 2 fenêtres en oubliant pas d'afficher la console, cliquer sur call ..)
+rendez-vous ensuite sur \<ipduserveur>:\<portduserveur>/client.html
+(ouvrir 2 fenêtres, puis cliquer sur call ..)
 
 
 PS:
